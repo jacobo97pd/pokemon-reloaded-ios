@@ -940,6 +940,37 @@ fn extract_zip(zip_path: &Path, storage: &Path) -> Result<PathBuf, String> {
     Ok(game_dir)
 }
 
+/// Writes what Documents holds (two levels deep) to the log, so a game that was not found can be
+/// tracked down from engine.log alone.
+fn log_documents(storage: &Path) {
+    fn walk(dir: &Path, depth: usize, budget: &mut usize) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            if *budget == 0 {
+                logf("  ...");
+                return
+            }
+            *budget -= 1;
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let indent = "  ".repeat(depth + 1);
+            if path.is_dir() {
+                logf(&format!("{}{}/", indent, name));
+                if depth < 1 && !is_app_owned(&path) {
+                    walk(&path, depth + 1, budget);
+                }
+            } else {
+                let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                let kind = if looks_like_zip(&path) { ", zip" } else { "" };
+                logf(&format!("{}{} ({} KB{})", indent, name, size / 1024, kind));
+            }
+        }
+    }
+    logf(&format!("contenido de {}:", storage.display()));
+    walk(storage, 0, &mut 60);
+}
+
 /// Finds the game, unpacking it first if it arrived as a zip. Returns the path of its `.exe`.
 fn ensure_game_ready() -> Result<PathBuf, String> {
     let storage = storage_dir();
@@ -1078,6 +1109,7 @@ fn run_worker() {
         Ok(exe) => exe,
         Err(e) => {
             logf(&format!("no se pudo preparar el juego: {}", e));
+            log_documents(&storage_dir());
             show_message(&e);
             return
         },
