@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds an unsigned Reloaded.ipa for iPhone. Needs macOS with Xcode, and Rust with the
-# aarch64-apple-ios target. Sideloadly (or AltStore) signs the .ipa with your Apple ID when it
-# installs it.
+# aarch64-apple-ios target. Impactor, Sideloadly or AltStore signs the .ipa with your Apple ID
+# when it installs it.
 #
 #   ios/build-ios.sh            -> ios/build/Reloaded.ipa
 #
@@ -48,7 +48,7 @@ SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 CLANG="$(xcrun --sdk iphoneos --find clang)"
 # shellcheck disable=SC2086 # NATIVE_LIBS is a list of flags
 "$CLANG" -arch arm64 -isysroot "$SDK" -miphoneos-version-min="$MIN_IOS" \
-    -fobjc-arc -fmodules -O2 -Wall \
+    -fobjc-arc -fmodules -O2 -Wall -DGLES_SILENCE_DEPRECATION=1 \
     "$ROOT/ios/host/main.m" "$LIB" \
     -framework UIKit -framework Foundation -framework QuartzCore -framework OpenGLES \
     -framework AVFoundation -framework AudioToolbox \
@@ -61,6 +61,8 @@ plutil -replace DTPlatformVersion -string "$(xcrun --sdk iphoneos --show-sdk-ver
 plutil -replace DTSDKName -string "iphoneos$(xcrun --sdk iphoneos --show-sdk-version)" "$APP/Info.plist"
 plutil -convert binary1 "$APP/Info.plist"
 printf 'APPL????' > "$APP/PkgInfo"
+# Loose icon files, named the way Info.plist's CFBundleIconFiles expects (ios/icons/make_icon.py).
+cp "$ROOT/ios/icons/"AppIcon*.png "$APP/"
 
 # What the Android launcher ships for the engine: the touch controls' artwork, the MIDI soundfont
 # and the mod manifests. The engine copies them where it expects them on first start.
