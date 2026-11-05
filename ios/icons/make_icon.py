@@ -1,7 +1,7 @@
 """Draws the Reloaded app icon: an original pixel-art critter peeking out of tall grass.
 
 Usage: python make_icon.py <out_dir>
-Writes the iOS icon sizes plus a 1024 master and a preview.
+Writes the icon sizes iOS looks up through CFBundleIconFiles.
 """
 import math
 import os
@@ -191,7 +191,6 @@ def main():
         "AppIcon60x60@3x.png": 180,
         "AppIcon76x76@2x~ipad.png": 152,
         "AppIcon83.5x83.5@2x~ipad.png": 167,
-        "icon-1024.png": 1024,
     }
     for name, size in files.items():
         scaled(img, size).save(os.path.join(out, name), optimize=True)
