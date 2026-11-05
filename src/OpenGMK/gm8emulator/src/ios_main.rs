@@ -16,6 +16,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::{c_char, c_void, CStr, CString},
     fs,
+    io::Read,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -832,18 +833,44 @@ fn find_game_root(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Zips in Documents, `game.zip` first.
+/// What the app keeps in Documents itself: the unpacked game, its staging copies, the touch artwork.
+fn is_app_owned(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n == GAME_DIR || n.starts_with("game.") || n.starts_with("touch-"))
+}
+
+/// Whether the file starts like a zip archive. Players rename the download ("POKEMON"), and the
+/// Files app may drop the extension along the way, so the name alone is not enough.
+fn looks_like_zip(path: &Path) -> bool {
+    let mut magic = [0u8; 4];
+    fs::File::open(path).and_then(|mut file| file.read_exact(&mut magic)).is_ok() && magic == *b"PK\x03\x04"
+}
+
+/// Zips in Documents or in a folder up to two levels below it. `game.zip` comes first, then files
+/// named `.zip`, then the rest.
 fn zip_candidates(storage: &Path) -> Vec<PathBuf> {
-    let mut zips: Vec<PathBuf> = fs::read_dir(storage)
-        .map(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.is_file() && p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("zip")))
-                .collect()
-        })
-        .unwrap_or_default();
-    zips.sort_by_key(|p| (p.file_name().and_then(|n| n.to_str()) != Some("game.zip"), p.clone()));
+    fn collect(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for path in entries.filter_map(|e| e.ok()).map(|e| e.path()) {
+            if is_app_owned(&path) {
+                continue
+            }
+            if path.is_dir() {
+                if depth < 2 {
+                    collect(&path, depth + 1, out);
+                }
+            } else if looks_like_zip(&path) {
+                out.push(path);
+            }
+        }
+    }
+    let mut zips = Vec::new();
+    collect(storage, 0, &mut zips);
+    zips.sort_by_key(|p| {
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_ascii_lowercase();
+        (name != "game.zip", !name.ends_with(".zip"), p.clone())
+    });
     zips
 }
 
@@ -922,12 +949,9 @@ fn ensure_game_ready() -> Result<PathBuf, String> {
     }
     // An unpacked folder copied over as it is. It is moved to `game/` (a rename, so instant): the
     // touch overlay reads the party sprites from there.
-    let ignored = |p: &Path| {
-        p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n == GAME_DIR || n.starts_with("game.") || n.starts_with("touch-"))
-    };
     if let Ok(entries) = fs::read_dir(&storage) {
         let mut dirs: Vec<PathBuf> =
-            entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir() && !ignored(p)).collect();
+            entries.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir() && !is_app_owned(p)).collect();
         dirs.sort();
         for dir in dirs {
             let Some(root) = find_game_root(&dir) else { continue };
