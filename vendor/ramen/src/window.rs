@@ -72,9 +72,9 @@ impl Window {
         self.0.events()
     }
 
-    /// The raw platform window handle: an `ANativeWindow*`. Mostly useful for creating a
-    /// GL context yourself.
-    #[cfg(target_os = "android")]
+    /// The raw platform window handle: an `ANativeWindow*` on Android, the `CAEAGLLayer*` on iOS.
+    /// Mostly useful for creating a GL context yourself.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     pub fn xid(&self) -> *mut std::ffi::c_void {
         self.0.xid()
     }

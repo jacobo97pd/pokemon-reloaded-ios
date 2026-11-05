@@ -147,7 +147,7 @@ backends! {
     mod dummy => Dummy if not(target_pointer_width = "0"),
 
     /// andrewrk's libsoundio
-    mod sio => SoundIo if all(not(target_os = "android"), not(target_pointer_width = "0")),
+    mod sio => SoundIo if all(not(target_os = "android"), not(target_os = "ios"), not(target_pointer_width = "0")),
 
     // Windows Audio Session API (WASAPI)
     //mod wasapi => Wasapi if all(target_os = "windows", feature = "wasapi"),

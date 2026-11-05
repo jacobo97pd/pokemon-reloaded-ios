@@ -23,5 +23,5 @@ serde = { version = "1.0", features = ["derive", "rc"], optional = true }
 #[target.'cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]
 #alsa_rs = { package = "alsa", version = "0.5", optional = true }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 libsoundio-sys = { path = "./libsoundio-sys" }

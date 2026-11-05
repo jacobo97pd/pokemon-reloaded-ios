@@ -1,4 +1,5 @@
 use crate::types::Colour;
+#[cfg(not(target_os = "ios"))]
 use clipboard::{ClipboardContext, ClipboardProvider};
 use imgui::{self, ImColor32, TableColumnSetup, WindowToken};
 
@@ -358,6 +359,19 @@ impl IoCustomFunctions for imgui::Io {
     }
 }
 pub struct EmuClipboardProvider;
+
+/// The recording tools' clipboard. The `clipboard` crate does not build for iOS, and the tools are
+/// not used there, so it simply holds nothing.
+#[cfg(target_os = "ios")]
+impl imgui::ClipboardBackend for EmuClipboardProvider {
+    fn get(&mut self) -> Option<String> {
+        None
+    }
+
+    fn set(&mut self, _value: &str) {}
+}
+
+#[cfg(not(target_os = "ios"))]
 impl imgui::ClipboardBackend for EmuClipboardProvider {
     fn get(&mut self) -> Option<String> {
         if let Ok(ctx) = ClipboardProvider::new() {

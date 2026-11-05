@@ -11,6 +11,14 @@ static OPENGL_EXTENSIONS: &[&str] = &[];
 fn main() -> Result<(), Box<dyn Error>> {
     let out = env::var("OUT_DIR")?;
 
+    // `cfg(mobile)` marks the code both phones share: touch controls, GLES, the background pause.
+    // Build scripts run on the host, so the target comes from the environment, not from `cfg!`.
+    println!("cargo::rustc-check-cfg=cfg(mobile)");
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "android" || target_os == "ios" {
+        println!("cargo:rustc-cfg=mobile");
+    }
+
     // that one giant macro in kernel.rs
     let aa_macro_path = &Path::new(&out).join("_apply_args.macro.rs");
     if !aa_macro_path.is_file() {
@@ -88,9 +96,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("cargo:rustc-link-lib=aaudio");
     }
 
-    // Windows-specific resources
+    // Windows-specific resources. `cfg` says the host is Windows (where winres is available); the
+    // target has to be Windows too, or cross-building for a phone from Windows fails here.
     #[cfg(target_os = "windows")]
-    {
+    if target_os == "windows" {
         // This code reduces size of the manifest resource. Some important notes about:
         // * Last char trickery is necessary to prevent gluing attributes.
         // * Windows XML parser doesn't understand LF line endings in manifests.

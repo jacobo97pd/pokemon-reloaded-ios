@@ -390,7 +390,7 @@ impl Game {
         // On Android the surface is the whole screen and cannot be moved or resized; pretending
         // otherwise would break the window→game coordinate mapping, so it is only honoured on
         // desktop, where the backend implements it.
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(mobile))]
         if width > 0 && height > 0 {
             self.window_inner_size = (width as u32, height as u32);
             self.window.set_position((x as _, y as _));
@@ -563,7 +563,7 @@ impl Game {
         }
         // A dialogue redraws from inside its own wait, so the controls' state is refreshed here as
         // well as once per frame; otherwise the frame loop never comes round during a dialogue.
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         self.sync_overlay();
         self.draw()?;
         let (width, height) = self.window_inner_size;
@@ -578,7 +578,7 @@ impl Game {
         if self.interp_draw {
             return Ok(Default::default())
         }
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         self.sync_overlay();
         let (width, height) = self.window_inner_size;
         if self.play_type != PlayType::Record {

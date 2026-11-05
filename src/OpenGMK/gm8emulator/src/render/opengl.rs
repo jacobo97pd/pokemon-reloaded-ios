@@ -29,14 +29,30 @@ pub mod glx;
 use glx as native_gl;
 #[cfg(target_os = "android")]
 pub mod egl;
-#[cfg(target_os = "android")]
+// iOS has no EGL: the context comes from EAGL. The module keeps the `egl` name so the game loop
+// and the renderer call the same functions on both phones.
+#[cfg(target_os = "ios")]
+#[path = "opengl/eagl.rs"]
+pub mod egl;
+#[cfg(mobile)]
 use egl as native_gl;
+
+/// The framebuffer that reaches the screen. On iOS there is no framebuffer 0: the app renders into
+/// one it created on top of the layer.
+#[cfg(target_os = "ios")]
+fn screen_fbo() -> GLuint {
+    egl::screen_framebuffer()
+}
+#[cfg(not(target_os = "ios"))]
+fn screen_fbo() -> GLuint {
+    0
+}
 
 /// GLSL version header, plus any prelude GLES needs that desktop GLSL doesn't.
 /// GLSL ES 3.00 has no default float precision in the fragment shader, so it must be declared.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const SHADER_VERSION: &str = "#version 300 es\nprecision highp float;\n";
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 const SHADER_VERSION: &str = "#version 330 core\n";
 
 macro_rules! shader_file {
@@ -53,9 +69,9 @@ fn shader_source(body: &str) -> Vec<u8> {
 }
 
 // Desktop GL requires 3.3; GLES on Android only ever exposes a 3.x series starting at 3.0.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 pub const OPENGL_VERSION: (i32, i32) = (3, 3);
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub const OPENGL_VERSION: (i32, i32) = (3, 0);
 
 #[derive(Clone, Copy, PartialEq)]
@@ -250,13 +266,13 @@ pub struct RendererImpl {
     gb_inverted: bool,
 
     /// Lazily-built program/buffers for the on-screen touch controls (Android only).
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     overlay: Option<Overlay>,
 }
 
 /// One image in the packed control artwork: which control it belongs to, and where it sits in the
 /// texture (u1, v1, u2, v2).
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 #[derive(Clone, Copy)]
 struct SkinSlot {
     name: &'static str,
@@ -270,16 +286,16 @@ struct SkinSlot {
 }
 
 /// How many control images the overlay can carry. Everything a control needs is one slot.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const MAX_SKIN_SLOTS: usize = 96;
 
 /// Side of each party sprite's square cell in the strip the overlay keeps for them.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const PARTY_CELL: u32 = 64;
 
 /// A tiny self-contained GL program to draw the touch controls over the frame, without touching
 /// the emulator's own render state.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 #[derive(Clone, Copy)]
 struct Overlay {
     program: GLuint,
@@ -296,7 +312,7 @@ struct Overlay {
     party_version: u64,
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 impl Overlay {
     fn slot(&self,name:&str)->Option<&SkinSlot>{
         let context=crate::touch_controls::current_context();
@@ -665,7 +681,7 @@ impl RendererImpl {
             imp.set_swap_interval(if options.vsync { 1 } else { 0 });
             // Desktop GL accepts DEPTH_COMPONENT* with a FLOAT type; GLES requires an integer
             // type matching the depth size, so the pair has to be chosen per platform.
-            let (zbuf_format, zbuf_type) = if cfg!(target_os = "android") {
+            let (zbuf_format, zbuf_type) = if cfg!(mobile) {
                 if options.zbuf_24 {
                     (gl::DEPTH_COMPONENT24 as GLint, gl::UNSIGNED_INT)
                 } else {
@@ -812,7 +828,10 @@ impl RendererImpl {
             // Use program
             gl.UseProgram(program);
 
-            // Configure gl::ReadPixels() to read from the back buffer
+            // Configure gl::ReadPixels() to read from the back buffer. iOS has no default framebuffer
+            // to name, and asking for GL_BACK with the app's own one bound is GL_INVALID_OPERATION,
+            // which the assert below would turn into a crash.
+            #[cfg(not(target_os = "ios"))]
             gl.ReadBuffer(gl::BACK);
 
             // Configure gl::ReadPixels() to align to 1 byte
@@ -933,7 +952,7 @@ impl RendererImpl {
                 gb_settings: None,
                 gb_inverted: false,
 
-                #[cfg(target_os = "android")]
+                #[cfg(mobile)]
                 overlay: None,
 
                 gl,
@@ -1114,7 +1133,7 @@ impl RendererImpl {
 /// Packs the pixel-art artwork the launcher leaves next to the game into one texture: the joystick's
 /// two images, plus one for every control that has a `<name>.png` beside it. Returns the texture (0
 /// when there is nothing) and where each image sits.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
     let mut slots: [Option<SkinSlot>; MAX_SKIN_SLOTS] = [None; MAX_SKIN_SLOTS];
     // Same folder the launcher writes `controls.conf` and `layout.conf` to.
@@ -1221,7 +1240,7 @@ fn load_skin(gl: &gl::Gl) -> (GLuint, [Option<SkinSlot>; MAX_SKIN_SLOTS]) {
 static LABEL_TEX: std::sync::Mutex<GLuint> = std::sync::Mutex::new(0);
 static LABELS: std::sync::Mutex<Vec<(String, [f32; 4], f32)>> = std::sync::Mutex::new(Vec::new());
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn label_file(text: &str) -> String {
     let mut name = String::from("label_");
     for c in text.chars() {
@@ -1232,7 +1251,7 @@ fn label_file(text: &str) -> String {
 }
 
 /// Packs the label images the launcher left in `files/touch-labels`, one slot per label text.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn load_label_skin(gl: &gl::Gl) -> GLuint {
     let dir = crate::android_main::storage_dir().join("touch-labels");
     let mut texts: Vec<&'static str> = Vec::new();
@@ -1302,18 +1321,18 @@ fn load_label_skin(gl: &gl::Gl) -> GLuint {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn label_art(text: &str) -> Option<([f32; 4], f32)> {
     LABELS.lock().unwrap().iter().find(|(known, _, _)| known == text).map(|(_, uv, aspect)| (*uv, *aspect))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn label_texture() -> GLuint {
     *LABEL_TEX.lock().unwrap()
 }
 
 /// Pushes a label as a texture quad, capped so a wide label still fits inside its button.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_label_sprite(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, half_h: f32, uv: [f32; 4], aspect: f32) {
     let max_w = half_h * 3.0;
     let mut hh = half_h;
@@ -1326,7 +1345,7 @@ fn push_label_sprite(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, hal
 }
 
 /// Creates the strip the party's six sprites go in: one square cell each, transparent to start with.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 unsafe fn create_party_texture(gl: &gl::Gl) -> GLuint {
     let mut texture = 0;
     gl.GenTextures(1, &mut texture);
@@ -1353,7 +1372,7 @@ unsafe fn create_party_texture(gl: &gl::Gl) -> GLuint {
 
 /// Reads the party's sprites out of the game's own files and refills the strip, one cell each. Shiny
 /// Pokémon keep the offset the game stores, which is also what picks their folder.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 unsafe fn upload_party(gl: &gl::Gl, texture: GLuint, species: [i32; crate::touch_controls::PICKER_SLOTS]) {
     let dir = crate::android_main::storage_dir().join("game/data");
     let cell = PARTY_CELL as usize;
@@ -1402,13 +1421,13 @@ unsafe fn upload_party(gl: &gl::Gl, texture: GLuint, species: [i32; crate::touch
 
 /// Pushes one vertex, converting window pixels to clip space. The texture coordinate is left at the
 /// top-left of the overlay's 1x1 white texture, so a plain colour comes through untouched.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_vertex(out: &mut Vec<f32>, ww: f32, wh: f32, x: f32, y: f32, col: [f32; 4]) {
     out.extend_from_slice(&[x / ww * 2.0 - 1.0, 1.0 - y / wh * 2.0, col[0], col[1], col[2], col[3], 0.0, 0.0]);
 }
 
 /// Transforms only the drawing; touch areas and key dispatch remain independent.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn transform_touch_vertices(vertices: &mut [f32], center: (f32, f32), scale: f32, brightness: f32) {
     let (cx, cy) = (center.0*2.0-1.0, 1.0-center.1*2.0);
     for vertex in vertices.chunks_exact_mut(8) {
@@ -1420,7 +1439,7 @@ fn transform_touch_vertices(vertices: &mut [f32], center: (f32, f32), scale: f32
 
 /// Pushes a textured quad, used for the pixel-art control artwork. The colour is white, so the
 /// sprite comes through as drawn.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_sprite(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1445,20 +1464,20 @@ fn push_sprite(
     corner(x1, y2, u1, v2);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_tri(out: &mut Vec<f32>, ww: f32, wh: f32, a: (f32, f32), b: (f32, f32), c: (f32, f32), col: [f32; 4]) {
     push_vertex(out, ww, wh, a.0, a.1, col);
     push_vertex(out, ww, wh, b.0, b.1, col);
     push_vertex(out, ww, wh, c.0, c.1, col);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_quad(out: &mut Vec<f32>, ww: f32, wh: f32, x1: f32, y1: f32, x2: f32, y2: f32, col: [f32; 4]) {
     push_tri(out, ww, wh, (x1, y1), (x2, y1), (x2, y2), col);
     push_tri(out, ww, wh, (x1, y1), (x2, y2), (x1, y2), col);
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, col: [f32; 4]) {
     const SEG: usize = 24;
     for i in 0..SEG {
@@ -1468,7 +1487,7 @@ fn push_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, c
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_ring(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, thickness: f32, col: [f32; 4]) {
     const SEG: usize = 24;
     let r0 = (r - thickness).max(0.0);
@@ -1482,7 +1501,7 @@ fn push_ring(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, thi
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_arrow(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, size: f32, dir: crate::touch_controls::Dir, col: [f32; 4]) {
     use crate::touch_controls::Dir;
     let (dx, dy) = match dir {
@@ -1499,7 +1518,7 @@ fn push_arrow(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, size: f32,
 }
 
 /// A tiny 3x5 bitmap font, just for the control labels.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn glyph(c: char) -> Option<[u8; 5]> {
     Some(match c {
         'Z' => [0b111, 0b001, 0b010, 0b100, 0b111],
@@ -1534,7 +1553,7 @@ fn glyph(c: char) -> Option<[u8; 5]> {
     })
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_text(out: &mut Vec<f32>, ww: f32, wh: f32, text: &str, cx: f32, cy: f32, px: f32, col: [f32; 4]) {
     let chars: Vec<char> = text.chars().collect();
     let char_w = 4.0 * px; // 3 columns of glyph + 1 gap
@@ -1559,7 +1578,7 @@ fn push_text(out: &mut Vec<f32>, ww: f32, wh: f32, text: &str, cx: f32, cy: f32,
 // --- New overlay style: smooth, semi-transparent shapes. All geometry, so it stays crisp at any size
 // and needs no artwork.
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn lerp_col(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     let t = t.clamp(0.0, 1.0);
     [
@@ -1570,14 +1589,14 @@ fn lerp_col(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     ]
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn with_alpha(mut col: [f32; 4], alpha: f32) -> [f32; 4] {
     col[3] *= alpha;
     col
 }
 
 /// The outline of a rounded rectangle, walked clockwise so it can be drawn as a fan from the centre.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn round_rect_outline(cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> Vec<(f32, f32)> {
     const SEG: usize = 5;
     let r = r.min(hw).min(hh).max(0.0);
@@ -1598,7 +1617,7 @@ fn round_rect_outline(cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> Vec<(f32, f
 }
 
 /// A filled rounded rectangle with a vertical gradient (top colour down to bottom colour).
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_round_rect(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1630,7 +1649,7 @@ fn push_round_rect(
 }
 
 /// A filled circle with a vertical gradient, for the joystick and the D-pad's centre.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_gradient_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, top: [f32; 4], bottom: [f32; 4]) {
     if r <= 0.0 {
         return
@@ -1652,7 +1671,7 @@ fn push_gradient_circle(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
 }
 
 /// A round, soft button: shadow, light rim, gradient fill and its label.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_soft_button(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1695,7 +1714,7 @@ fn push_soft_button(
 }
 
 /// The joystick of the new overlay: a soft translucent ring with a knob that follows the thumb.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_soft_joystick(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, ox: f32, oy: f32, opacity: f32) {
     let shadow = with_alpha([0.0, 0.0, 0.0, 0.28], opacity);
     let rim = with_alpha([1.0, 1.0, 1.0, 0.28], opacity);
@@ -1720,7 +1739,7 @@ fn push_soft_joystick(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r:
 }
 
 /// The D-pad of the new overlay: a soft translucent cross with four arrows.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_soft_dpad(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, opacity: f32) {
     use crate::touch_controls::Dir;
     let shadow = with_alpha([0.0, 0.0, 0.0, 0.26], opacity);
@@ -1746,7 +1765,7 @@ fn push_soft_dpad(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32
 
 /// A modern control: a dark translucent disc with a soft rim, an inner ring and its label. Wide
 /// labels become a rounded pill instead of being squeezed into a circle.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_modern_control(
     out: &mut Vec<f32>,
     ww: f32,
@@ -1790,7 +1809,7 @@ fn push_modern_control(
     (cx, cy, r)
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn poly_dir(from: (f32, f32), to: (f32, f32)) -> (f32, f32) {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     let len = (dx * dx + dy * dy).sqrt().max(0.0001);
@@ -1798,7 +1817,7 @@ fn poly_dir(from: (f32, f32), to: (f32, f32)) -> (f32, f32) {
 }
 
 /// The outline of a rounded cross, walked in order, so the D-pad reads as one clean shape.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn plus_points(cx: f32, cy: f32, arm: f32, thick: f32, radius: f32) -> Vec<(f32, f32)> {
     let corners = [
         (cx - thick, cy - arm), (cx + thick, cy - arm), (cx + thick, cy - thick), (cx + arm, cy - thick),
@@ -1825,7 +1844,7 @@ fn plus_points(cx: f32, cy: f32, arm: f32, thick: f32, radius: f32) -> Vec<(f32,
 }
 
 /// Fills a polygon as a fan from (cx, cy), with a vertical gradient.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_polygon(out: &mut Vec<f32>, ww: f32, wh: f32, points: &[(f32, f32)], cx: f32, cy: f32, top: [f32; 4], bottom: [f32; 4]) {
     if points.len() < 3 {
         return
@@ -1847,7 +1866,7 @@ fn push_polygon(out: &mut Vec<f32>, ww: f32, wh: f32, points: &[(f32, f32)], cx:
 
 /// The modern movement control: a clean translucent disc with a single rounded cross that lights up
 /// the arm being pressed, or a knob that follows the thumb (joystick).
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, r: f32, ox: f32, oy: f32, dpad: bool, tint: Option<[f32; 3]>) {
     use crate::touch_controls::Dir;
     let t = tint.unwrap_or([1.0, 1.0, 1.0]);
@@ -1913,7 +1932,7 @@ fn push_modern_movement(out: &mut Vec<f32>, ww: f32, wh: f32, cx: f32, cy: f32, 
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 impl RendererImpl {
     /// Builds (once) the tiny program used to draw the touch controls over the frame.
     fn overlay_program(&mut self) -> Overlay {
@@ -2205,7 +2224,7 @@ impl RendererImpl {
 
             // `present` restores whatever framebuffer was bound while the game drew. The overlay
             // must go to the screen (framebuffer 0), not back into the game's offscreen target.
-            gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+            gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, screen_fbo());
             gl.Viewport(0, 0, window_width as i32, window_height as i32);
             gl.Disable(gl::SCISSOR_TEST);
             gl.Disable(gl::DEPTH_TEST);
@@ -2292,7 +2311,7 @@ impl RendererTrait for RendererImpl {
         let pow2 = (raw as u64).next_power_of_two() as u32 >> usize::from(!raw.is_power_of_two());
         // A max-size atlas would be gigabytes of RGBA; that fails on mobile GPUs and
         // mostly on desktops too. Several smaller atlases work just as well.
-        let cap = if cfg!(target_os = "android") { 4096 } else { 8192 };
+        let cap = if cfg!(mobile) { 4096 } else { 8192 };
         pow2.min(cap)
     }
 
@@ -2330,7 +2349,7 @@ impl RendererTrait for RendererImpl {
                         height as _,       // height
                         0,                 // border ("must be 0")
                         // GLES has no BGRA; only the allocation happens here, so either works.
-                        if cfg!(target_os = "android") { gl::RGBA } else { gl::BGRA },
+                        if cfg!(mobile) { gl::RGBA } else { gl::BGRA },
                         gl::UNSIGNED_BYTE, // type
                         ptr::null(),       // data
                     );
@@ -2346,7 +2365,7 @@ impl RendererTrait for RendererImpl {
 
             // upload textures
             // GLES has no BGRA format, so the pixels are swapped to RGBA and uploaded that way.
-            if cfg!(target_os = "android") {
+            if cfg!(mobile) {
                 for (_, pixels) in &mut sprites {
                     crate::util::bgra2rgba(pixels);
                 }
@@ -2387,7 +2406,7 @@ impl RendererTrait for RendererImpl {
                     0,                    // yoffset
                     atlas_w as _,         // width
                     atlas_h as _,         // height
-                    if cfg!(target_os = "android") { gl::RGBA } else { gl::BGRA },
+                    if cfg!(mobile) { gl::RGBA } else { gl::BGRA },
                     gl::UNSIGNED_BYTE,    // type
                     atlas_buf.as_ptr() as _, // pixels
                 );
@@ -4023,7 +4042,7 @@ impl RendererTrait for RendererImpl {
 
             // Where the game image lands on screen, so the controls that belong over it (the dialogue
             // button) can be placed relative to the game instead of the window.
-            #[cfg(target_os = "android")]
+            #[cfg(mobile)]
             if window_width > 0 && window_height > 0 {
                 crate::touch_controls::set_viewport(
                     w_x as f32 / window_width as f32,
@@ -4057,7 +4076,7 @@ impl RendererTrait for RendererImpl {
 
             // Draw framebuffer to screen
             self.current_texture = None;
-            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, screen_fbo());
             debug_assert_eq!(self.gl.GetError(), 0);
             self.clear_view((0.0, 0.0, 0.0).into(), 1.0); // to avoid weird strobe lights (???)
             debug_assert_eq!(self.gl.GetError(), 0);
@@ -4126,7 +4145,7 @@ impl RendererTrait for RendererImpl {
                     w_x + w_w,
                     blit_y + w_h,
                     gl::COLOR_BUFFER_BIT,
-                    if cfg!(target_os = "android") {
+                    if cfg!(mobile) {
                         gl::NEAREST
                     } else if self.next_render_state.interpolate_pixels.into() {
                         gl::LINEAR
@@ -4144,7 +4163,7 @@ impl RendererTrait for RendererImpl {
             debug_assert_eq!(self.gl.GetError(), 0);
 
             // On-screen touch controls (Android): drawn on top of the presented frame.
-            #[cfg(target_os = "android")]
+            #[cfg(mobile)]
             self.draw_touch_overlay(window_width_u, window_height_u);
 
             // Present buffer
@@ -4173,7 +4192,7 @@ impl RendererTrait for RendererImpl {
             let mut fb_old = 0;
             self.gl.GetIntegerv(gl::DRAW_FRAMEBUFFER_BINDING, &mut fb_old);
             self.current_texture = None;
-            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+            self.gl.BindFramebuffer(gl::DRAW_FRAMEBUFFER, screen_fbo());
             self.gl.Viewport(0, 0, window_width as i32, window_height as i32);
             self.gl.ClearColor(0.0, 0.0, 0.0, 1.0);
             self.gl.Clear(gl::COLOR_BUFFER_BIT);

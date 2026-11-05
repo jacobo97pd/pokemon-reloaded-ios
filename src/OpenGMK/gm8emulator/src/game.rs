@@ -1505,7 +1505,7 @@ impl Game {
             // On a phone the window is created at the room's size, which is a stamp in the corner,
             // and only grows once a resize arrives. The surface already knows the real size, so
             // start there instead of showing a tiny picture for the first frames.
-            #[cfg(target_os = "android")]
+            #[cfg(mobile)]
             window_inner_size: {
                 let (surface_w, surface_h) = ramen::platform::android::window_size();
                 if surface_w > 0 && surface_h > 0 {
@@ -1514,7 +1514,7 @@ impl Game {
                     (width, height)
                 }
             },
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(mobile))]
             window_inner_size: (width, height),
             window_is_logical_dpi: false,
             window_offset_spoof: (0, 0),
@@ -2005,7 +2005,7 @@ impl Game {
     /// inside its own wait loop (it calls `screen_redraw` while it waits for a key), so the frame
     /// loop does not come back round until the dialogue is over, and sampling there would never see
     /// one.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     pub(crate) fn sync_overlay(&self) {
         // The touch overlay tells taps from drags in the bag by knowing which room/modal it is in.
         let room_name = self.assets.rooms.get_asset(self.room.id).map(|r| r.name.to_string().to_ascii_lowercase()).unwrap_or_default();
@@ -2127,7 +2127,7 @@ impl Game {
     }
 
     /// Each party slot's stored species value (0 = empty) straight from `global.pkmn1[0..5]`.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn party_species(&self) -> [i32; crate::touch_controls::PICKER_SLOTS] {
         let mut species = [0; crate::touch_controls::PICKER_SLOTS];
         for (index, slot) in species.iter_mut().enumerate() {
@@ -2141,7 +2141,7 @@ impl Game {
     ///
     /// The renderer keeps the boxes in the game's own coordinates: the view moves a room coordinate
     /// into the picture, and the picture sits somewhere in the window, so both steps are applied here.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn picker_boxes(&self) -> Vec<(f32, f32, f32, f32)> {
         let sprites = crate::touch_controls::character_sprites();
         let (window_w, window_h) = self.window_inner_size;
@@ -2171,7 +2171,7 @@ impl Game {
     }
 
     /// The sprite the player is drawn with (the base roster and custom characters alike).
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn player_sprite_index(&self) -> i32 {
         // `obj_Prota` (object 14) is the player. Its instance id changes when a save is loaded or
         // the room is rebuilt, so look it up by object index, not by `get_by_instid(3)`.
@@ -2185,7 +2185,7 @@ impl Game {
     }
 
     /// Writes the player's current sprite to `files/rpc-player.png`, head up.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn export_player_sprite(&self, id: i32) -> bool {
         if id < 0 {
             return false
@@ -2211,7 +2211,7 @@ impl Game {
     }
 
     /// The custom trainer id of the player instance (`(3).char2`), or -1 for the base roster.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn player_char2(&self) -> i32 {
         let Some(field_id) = self.compiler.find_field_id(b"char2") else {
             return -1
@@ -2231,7 +2231,7 @@ impl Game {
     }
 
     /// A string in a GML global, if the game has declared it.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn global_string(&self, name: &[u8]) -> Option<std::string::String> {
         let field_id = self.compiler.find_field_id(name)?;
         match self.globals.fields.get(&field_id)?.get(0)? {
@@ -2241,7 +2241,7 @@ impl Game {
     }
 
     /// Some number in a GML global, if the game has declared it.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn global_number(&self, name: &[u8], index: u32) -> Option<i32> {
         let field_id = self.compiler.find_field_id(name)?;
         match self.globals.fields.get(&field_id)?.get(index)? {
@@ -2252,7 +2252,7 @@ impl Game {
 
     /// The id of the modal the game is drawing, or a negative code when it cannot be read:
     /// -1 nothing open, -2 the variable is unknown to the compiler, -3 not present in the globals.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn modal_system(&self) -> i32 {
         let Some(field_id) = self.compiler.find_field_id(b"drawModalSystem") else {
             return -2
@@ -2275,7 +2275,7 @@ impl Game {
     /// The game draws its dialogues (and the rest of its modals) through a script whose id it keeps
     /// in `global.drawModalSystem`; -1 means nothing is open. 6937 is the box with a portrait, 6949
     /// the plain one and 6941 the mobile one.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn dialogue_open(&self) -> bool {
         matches!(self.modal_system(), 6937 | 6949 | 6941)
     }
@@ -2283,14 +2283,14 @@ impl Game {
     /// True while the game's own Pokémon box (the PC storage) is open. There is no single room id to
     /// look at - the box can be reached from several places - but the game keeps `global.ENCAJA` set
     /// while it is showing, and that is what tells it apart.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn inside_box(&self) -> bool {
         self.global_number(b"ENCAJA", 0).is_some_and(|value| value != 0)
     }
 
     /// True while the game is showing its text-entry dialog, the one that draws the on-screen
     /// keyboard (GML script 7754). The Android side raises the system keyboard while it is open.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn text_entry_open(&self) -> bool {
         self.modal_system() == 7754
     }
@@ -2301,7 +2301,7 @@ impl Game {
     /// screen is the one drawn before the keyboard appeared or after it left. That left the pan one
     /// step behind - and the game stuck up top once the keyboard was gone. Presenting the frame that
     /// is already drawn is enough to move it, and it costs only the blit.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn represent_if_ime_moved(&mut self) {
         // The interpolation pass is already drawing; presenting from inside it would flush the
         // queue halfway through. Its own present, a few instructions later, sees the new inset.
@@ -2332,10 +2332,10 @@ impl Game {
         // Held for the whole frame, so the activity cannot destroy the surface while this frame is
         // being drawn. Without it, detaching mid-frame makes the next OpenGL call answer
         // GL_INVALID_OPERATION, which the engine treats as fatal and which killed the render thread.
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         let _frame = crate::render::opengl::egl::frame_guard();
 
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         {
             // The driver lost the context (rare, usually a GPU reset). Every GL object the game
             // holds belongs to the old one, so the only safe recovery is a new session: end this
@@ -2419,7 +2419,7 @@ impl Game {
         }
 
         // The touch overlay shows different controls depending on where we are in the game.
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         self.sync_overlay();
 
         if self.esc_close_game && self.input.keyboard_lastkey() == input::Button::Escape as u8 {
@@ -3443,11 +3443,11 @@ impl Game {
         self.input.mouse_step();
         // What the system keyboard typed becomes events in the same queue the window is about to
         // drain, so the game sees it exactly as if it came from a hardware keyboard.
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         crate::android_main::ime_pump();
         // The keyboard coming or going moves the picture, and the game does not redraw on its own
         // while it waits inside a text dialog, so the frame already drawn is presented again.
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         self.represent_if_ime_moved();
         self.window.poll_events();
         // Apply releases a previous poll deferred, then snapshot the held state so a press and
@@ -3671,7 +3671,7 @@ impl Game {
         let mut next_present = time_now;
         let log_render = std::env::var_os("OPENGMK_RENDER_LOG").is_some();
         loop {
-            #[cfg(target_os = "android")]
+            #[cfg(mobile)]
             if crate::android_main::worker_stop_requested() {
                 self.close_requested = true;
                 break Ok(self.run_game_end_events()?);
@@ -3679,7 +3679,7 @@ impl Game {
             self.process_window_events();
 
             // Test-only savestate hotkeys for the netplay determinism check.
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(mobile))]
             {
                 if self.input.keyboard_check_pressed(input::Button::F9 as u8) {
                     let state = crate::game::savestate::SaveState::from(
@@ -3714,7 +3714,7 @@ impl Game {
                 let now = Instant::now();
                 // While Android has no surface (app in the background) do not accumulate wall time:
                 // otherwise the game would fast-forward to catch up when the window comes back.
-                #[cfg(target_os = "android")]
+                #[cfg(mobile)]
                 if !crate::render::opengl::egl::has_surface() {
                     step_clock = now;
                     accumulator = Duration::ZERO;
@@ -3900,10 +3900,10 @@ impl Game {
     /// working, but anything that could alter the simulation is suppressed and the few pieces of
     /// state the draw path normally writes are restored afterwards.
     fn render_only(&mut self) -> gml::Result<()> {
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         let _frame = crate::render::opengl::egl::frame_guard();
 
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         {
             if crate::render::opengl::egl::context_lost() {
                 eprintln!("[gl] contexto perdido: terminando la sesion para reconstruir el renderer");

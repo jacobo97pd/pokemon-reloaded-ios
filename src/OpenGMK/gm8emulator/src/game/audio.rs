@@ -1,6 +1,11 @@
 pub mod midi;
 #[cfg(target_os = "android")]
 mod aaudio;
+// iOS output goes through a RemoteIO audio unit. It keeps the `aaudio` name so the rest of this file
+// drives both phones the same way.
+#[cfg(target_os = "ios")]
+#[path = "audio/coreaudio.rs"]
+mod aaudio;
 mod mixer;
 mod mp3;
 
@@ -24,7 +29,7 @@ use udon::{
     wav::WavPlayer,
 };
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub fn sound_started() -> bool {
     aaudio::sound_started()
 }
@@ -148,19 +153,19 @@ impl Source for InterprocessSource {
     fn reset(&mut self) {}
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn session_api() -> Api {
     Api::Dummy
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 fn session_api() -> Api {
     Api::SoundIo
 }
 
 impl Drop for AudioManager {
     fn drop(&mut self) {
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         if let Some(stream) = self.aaudio_stream.take() {
             aaudio::close_stream(stream);
         }
@@ -169,7 +174,7 @@ impl Drop for AudioManager {
 
 impl AudioManager {
     /// An audio manager that produces no output. Used on platforms without an audio backend yet.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn disabled() -> Self {
         Self {
             mixer: None,
@@ -188,7 +193,7 @@ impl AudioManager {
     }
 
     /// Android audio: drives the mixer from a native AAudio output stream.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     fn new_android(do_output: bool) -> Self {
         let global_volume = Arc::new(AtomicU32::from(1.0f32.to_bits()));
         let gb_audio = Arc::new(GbAudioParams::default());
@@ -218,27 +223,27 @@ impl AudioManager {
     }
 
     pub fn new(do_output: bool, capture_audio: bool) -> Self {
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         {
             Self::new_android(do_output)
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(mobile))]
         {
             Self::new_desktop(do_output, capture_audio)
         }
     }
 
     /// Desktop audio: pulls from the mixer with udon's SoundIo session.
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     fn new_desktop(do_output: bool, capture_audio: bool) -> Self {
         // TODO: not all these unwraps
         let session = Session::new(session_api()).unwrap();
         let device = match session.default_output_device() {
             Ok(device) => device,
             Err(_) => {
-                #[cfg(not(target_os = "android"))]
+                #[cfg(not(mobile))]
                 panic!("no se pudo obtener el dispositivo de audio de salida");
-                #[cfg(target_os = "android")]
+                #[cfg(mobile)]
                 return Self::disabled();
             },
         };
@@ -636,14 +641,14 @@ pub(crate) fn check_mp3(file: Box<[u8]>) -> Result<(), String> {
 
 /// Stops and resumes the audio output when the app goes to the background and comes back.
 pub fn set_output_paused(paused: bool) {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     aaudio::set_activity_paused(paused);
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     let _ = paused;
 }
 
 /// Pauses or resumes only because another app took or returned audio focus.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub fn set_focus_paused(paused: bool) {
     aaudio::set_focus_paused(paused);
 }

@@ -25,6 +25,13 @@ mod util;
 #[cfg(target_os = "android")]
 mod android_main;
 
+/// The iOS entry point. The engine reaches the phone it runs on through `crate::android_main`
+/// (storage, keyboard, stop requests...), so on iOS that name points here.
+#[cfg(target_os = "ios")]
+mod ios_main;
+#[cfg(target_os = "ios")]
+use ios_main as android_main;
+
 /// The on-screen touch controls and their customisable layout. Built on every target so the
 /// `dump_layout` example can turn the built-in layout into the file the launcher app draws.
 pub mod touch_controls;

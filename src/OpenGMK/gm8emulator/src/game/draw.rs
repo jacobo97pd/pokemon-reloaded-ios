@@ -210,7 +210,7 @@ impl Game {
 
         // The character picker's arrows are placed from what the game draws, so the frame's box starts
         // empty here and the sprite draws below fill it.
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         crate::touch_controls::reset_character_sprites();
 
         // Draw all views

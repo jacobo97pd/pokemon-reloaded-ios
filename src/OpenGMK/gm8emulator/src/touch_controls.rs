@@ -662,7 +662,7 @@ pub fn set_room(room: i32) {
         picker_reset();
         // A fresh picker offers its one-off trick button again; using it once was enough last time.
         COMBO_USED.store(false, Ordering::Relaxed);
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         if room == PUZZLE_ROOM {
             crate::android_main::show_puzzle_hint();
         }
@@ -750,7 +750,7 @@ pub fn text_entry_inset() -> u32 {
 /// overlay believed at the time: which room, which group of controls it picked, and how many of
 /// them it counted as active. It only writes when something changes, so it stays quiet while
 /// playing.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn log_state_change(room: i32) {
     static LAST: AtomicU32 = AtomicU32::new(u32::MAX);
     static LAST_ROOM: AtomicI32 = AtomicI32::new(i32::MIN);
@@ -796,7 +796,7 @@ fn log_state_change(room: i32) {
 }
 
 /// Nothing to report where there is no overlay.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 fn log_state_change(_room: i32) {}
 
 /// Which group of controls the current game state needs.
